@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Loopshot – time-loop shooter prototype</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0c0f15;
+    --panel: #151a23;
+    --line: #262e3b;
+    --text: #e8ebf1;
+    --muted: #8b94a7;
+    --player: #45d6c8;
+    --cheese: #ffd166;
+    --danger: #ff5d6c;
+    --ok: #7ee081;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    overflow: hidden;
+    touch-action: manipulation;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #app {
+    height: 100dvh;
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  }
+
+  /* ---------- HUD ---------- */
+  #hud {
+    display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; justify-content: center;
+    padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  .stat { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+  .stat .k { color: var(--muted); font-size: 12px; }
+  .stat .v { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 1.5em; }
+  .stat .v.low { color: var(--danger); }
+  .pips { letter-spacing: 2px; }
+  #hHp { color: var(--player); }
+  #hMouse { color: #d9cfc4; }
+  .bar { width: 54px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; align-self: center; }
+  .bar i { display: block; height: 100%; width: 100%; background: var(--muted); }
+  .bar i.ready { background: var(--player); }
+
+  /* ---------- Stage ---------- */
+  #stage { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; padding: 8px; }
+  canvas { display: block; border-radius: 6px; touch-action: none; }
+  #overlay {
+    position: absolute; inset: 0; display: grid; place-items: center; padding: 16px;
+    background: rgba(8, 10, 14, 0.72); overflow-y: auto;
+  }
+  #overlay.hidden { display: none; }
+  #overlay.compact { background: transparent; place-items: end center; pointer-events: none; }
+  #overlay.compact .card { pointer-events: auto; max-width: 560px; }
+  .card {
+    width: 100%; max-width: 520px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 18px 20px;
+  }
+  .card h1 { margin: 0 0 6px; font-size: 30px; letter-spacing: -0.5px; }
+  .card h2 { margin: 0 0 6px; font-size: 20px; }
+  .card p { margin: 0 0 10px; color: #c9cfdb; }
+  .card .small { font-size: 12.5px; color: var(--muted); }
+  .controls { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 10px 0 12px; font-size: 13px; }
+  .controls b { color: var(--text); font-weight: 600; }
+  .controls span { color: #c9cfdb; }
+  .rules { margin: 0 0 14px; padding-left: 18px; color: #c9cfdb; font-size: 13px; }
+  .rules li { margin: 2px 0; }
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    font: inherit; font-weight: 700; cursor: pointer; border-radius: 8px; padding: 10px 16px;
+    border: 1px solid var(--line); background: #1e2531; color: var(--text);
+  }
+  button.primary { background: var(--player); color: #062a27; border-color: var(--player); }
+  button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  .win { color: var(--ok); }
+  .lose { color: var(--danger); }
+  kbd { font: inherit; font-size: 12px; padding: 1px 5px; border: 1px solid var(--line); border-radius: 4px; background: #1e2531; }
+
+  /* ---------- Touch controls ---------- */
+  #touch {
+    display: none; justify-content: space-between; align-items: center;
+    padding: 8px 18px 12px; gap: 12px; touch-action: none;
+  }
+  body.touch #touch { display: flex; }
+  #joy {
+    width: 128px; height: 128px; border-radius: 50%; position: relative; flex: none;
+    background: #151a23; border: 2px solid var(--line); touch-action: none;
+  }
+  #knob {
+    position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px;
+    border-radius: 50%; background: #2b3444; border: 2px solid #3a4558;
+  }
+  .tbtns { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; gap: 10px; align-items: center; }
+  .tbtn {
+    border-radius: 50%; width: 76px; height: 76px; padding: 0; font-size: 14px; touch-action: none;
+    background: #1e2531; border: 2px solid var(--line);
+  }
+  .tbtn.down { background: #2d3748; }
+  #tShoot { width: 88px; height: 88px; grid-row: 1 / span 2; grid-column: 2; border-color: var(--player); color: var(--player); }
+  #tMelee { border-color: #ff9f6b; color: #ff9f6b; }
+  #tLock { width: 76px; height: 40px; border-radius: 20px; font-size: 12px; }
+  #tLock.on { background: #45d6c822; border-color: var(--player); color: var(--player); }
+
+  @media (max-width: 640px) {
+    #hud { gap: 4px 12px; padding: 6px 8px; }
+    .stat .k { font-size: 11px; }
+    .bar { width: 40px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="hud" aria-label="Game status">
+    <div class="stat"><span class="k">Round</span><span class="v" id="hRound">1</span></div>
+    <div class="stat"><span class="k">Past selves</span><span class="v" id="hGhosts">0</span></div>
+    <div class="stat"><span class="k">HP</span><span class="v pips" id="hHp">●●●</span></div>
+    <div class="stat"><span class="k">Mouse</span><span class="v pips" id="hMouse">■■■</span></div>
+    <div class="stat"><span class="k">Time</span><span class="v" id="hTime">30.0</span></div>
+    <div class="stat"><span class="k">Facing</span><span class="v" id="hFacing">→</span></div>
+    <div class="stat"><span class="k">Gun</span><div class="bar"><i id="hGun"></i></div></div>
+    <div class="stat"><span class="k">Melee</span><div class="bar"><i id="hMelee"></i></div></div>
+  </header>
+
+  <main id="stage">
+    <canvas id="game" aria-label="Game arena"></canvas>
+    <div id="overlay"></div>
+  </main>
+
+  <div id="touch" aria-label="Touch controls">
+    <div id="joy"><div id="knob"></div></div>
+    <div class="tbtns">
+      <button class="tbtn" id="tMelee" type="button">Melee</button>
+      <button class="tbtn" id="tShoot" type="button">Shoot</button>
+      <button class="tbtn" id="tLock" type="button">Lock aim</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   CONFIG
+   ===================================================================== */
+const TILE = 40, COLS = 56, ROWS = 40;
+const W = COLS * TILE, H = ROWS * TILE;          // world: 2240 x 1600 (2.8x the old 800 x 560 arena)
+const VIEW_W = 800, VIEW_H = 560;                 // visible window in world units (same as the old arena)
+const TICK_RATE = 60, DT = 1 / TICK_RATE;        // fixed simulation step
+const INPUT_BUFFER_TICKS = 8;                     // a press slightly before cooldown ends still fires
+const TELEGRAPH_TICKS = 36;                       // how early a past self's attack is previewed (0.6 s)
+const GUIDE_TICKS = 90;                           // how far ahead a past self's path is drawn (1.5 s)
+
+// The world is identical every round. Recordings store world positions, so
+// keeping the walls fixed guarantees past selves never clip through geometry.
+const MAP = buildMap();
+
+function buildMap() {
+  const g = [];
+  for (let r = 0; r < ROWS; r++) {
+    g.push([]);
+    for (let c = 0; c < COLS; c++) g[r].push(r === 0 || c === 0 || r === ROWS - 1 || c === COLS - 1 ? '#' : '.');
+  }
+  const fill = (c, r, w, h) => { for (let y = r; y < r + h; y++) for (let x = c; x < c + w; x++) g[y][x] = '#'; };
+  // [col, row, width, height] obstacles
+  [
+    [3, 3, 4, 1], [3, 3, 1, 3], [49, 3, 4, 1], [52, 3, 1, 3],          // corner L-walls
+    [3, 36, 4, 1], [3, 34, 1, 3], [49, 36, 4, 1], [52, 34, 1, 3],
+    [10, 10, 14, 1], [32, 10, 14, 1], [10, 29, 14, 1], [32, 29, 14, 1], // long walls with a central gap
+    [10, 13, 1, 6], [10, 22, 1, 6], [45, 13, 1, 6], [45, 22, 1, 6],     // side walls with a door
+    [17, 15, 2, 2], [37, 15, 2, 2], [17, 23, 2, 2], [37, 23, 2, 2],     // pillars
+    [27, 5, 2, 2], [27, 33, 2, 2], [4, 19, 2, 2], [50, 19, 2, 2],
+    [20, 4, 3, 1], [33, 4, 3, 1], [20, 35, 3, 1], [33, 35, 3, 1],       // short blocks
+  ].forEach(rc => fill(...rc));
+  // Walled cheese box in the centre, entered through gaps at top and bottom.
+  for (let c = 25; c <= 30; c++) { g[17][c] = '#'; g[22][c] = '#'; }
+  for (let r = 17; r <= 22; r++) { g[r][25] = '#'; g[r][30] = '#'; }
+  g[17][27] = g[17][28] = g[22][27] = g[22][28] = '.';
+  return g.map(row => row.join(''));
+}
+
+const CFG = {
+  player: { r: 12, speed: 170, hp: 3, iframes: 0.6 },
+  ghost:  { hp: 2 },
+  gun:    { cooldown: 0.4, speed: 420, range: 380, dmg: 1 },
+  melee:  { cooldown: 0.55, reach: 28, width: 38, dmg: 2, show: 0.16 },
+  mouse:  { r: 10, hp: 3, baseSpeed: 36, speedPerRound: 5, maxSpeed: 60,
+            stun: 0.3, pauseEvery: 4, pauseTime: 0.5 },
+};
+
+// Facing is stored as an index so recordings stay compact: 0 up, 1 right, 2 down, 3 left.
+const DIR_VEC   = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }];
+const DIR_ARROW = ['↑', '→', '↓', '←'];
+
+const OBJECTIVE = { x: 1120, y: 800, r: 14 };     // the cheese, centre of the walled box
+const PLAYER_SPAWNS = [[6, 33], [48, 6], [6, 6], [48, 33]];
+const MOUSE_SPAWNS  = [[44, 20], [13, 7], [44, 33], [12, 32], [40, 6], [13, 20]];
+const GHOST_COLORS  = ['#ff7ab6', '#ffb347', '#a3e635', '#7aa2ff', '#c084fc', '#f87171', '#facc15', '#fb923c'];
+const COL = {
+  bg: '#0c0f15', floor: '#11161e', grid: '#171d27', wall: '#2a3242', wallTop: '#3a455a',
+  player: '#45d6c8', mouse: '#d9cfc4', cheese: '#ffd166', melee: '#ff9f6b', danger: '#ff5d6c',
+};
+
+// Difficulty comes from the clock, mouse speed, spawn layout and the growing
+// number of past selves – never from extra enemy health.
+function roundConfig(n) {
+  return {
+    timeLimit: Math.max(32, 45 - (n - 1) * 5),                       // 45, 40, 35, 32 …
+    mouseSpeed: Math.min(CFG.mouse.maxSpeed, CFG.mouse.baseSpeed + (n - 1) * CFG.mouse.speedPerRound),
+    playerSpawn: PLAYER_SPAWNS[(n - 1) % PLAYER_SPAWNS.length],
+    mouseSpawn: MOUSE_SPAWNS[(n - 1) % MOUSE_SPAWNS.length],
+  };
+}
+
+/* =====================================================================
+   STATE
+   ===================================================================== */
+const game = {
+  state: 'title',        // title | ready | playing | ending | won | lost
+  round: 1,
+  rc: null,              // current round config
+  recordings: [],        // completed, frozen recordings (one per cleared round)
+  recording: null,       // recording being written this round
+  ghosts: [],
+  player: null,
+  mouse: null,
+  bullets: [],
+  fx: [],                // melee flashes (visual)
+  particles: [],         // hit sparks (visual)
+  tick: 0,
+  endTimer: 0,
+  endResult: null,       // { won, reason }
+  lastHitBy: null,
+  shake: 0,
+};
+
+const input = {
+  keys: new Set(),
+  joyX: 0, joyY: 0,
+  shootBuf: 0, meleeBuf: 0,
+  lockToggle: false,
+};
+
+/* =====================================================================
+   UTILITIES / MAP
+   ===================================================================== */
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const tileCenter = (c, r) => ({ x: c * TILE + TILE / 2, y: r * TILE + TILE / 2 });
+
+function isWallTile(c, r) {
+  return c < 0 || r < 0 || c >= COLS || r >= ROWS || MAP[r][c] === '#';
+}
+function isWallAt(x, y) { return isWallTile(Math.floor(x / TILE), Math.floor(y / TILE)); }
+
+// Distance from (x,y) to the first wall along a cardinal direction, capped at maxLen.
+function rayLength(x, y, dir, maxLen) {
+  const v = DIR_VEC[dir];
+  for (let l = 4; l < maxLen; l += 4) if (isWallAt(x + v.x * l, y + v.y * l)) return l;
+  return maxLen;
+}
+
+// Breadth-first search over tiles. Neighbour order is fixed, so the mouse's
+// route is identical every time the same spawn is used.
+function findPath(startC, startR, goalC, goalR) {
+  const key = (c, r) => r * COLS + c;
+  const prev = new Int16Array(COLS * ROWS).fill(-1);
+  const start = key(startC, startR), goal = key(goalC, goalR);
+  const queue = [start];
+  prev[start] = start;
+  for (let qi = 0; qi < queue.length; qi++) {
+    const k = queue[qi];
+    if (k === goal) break;
+    const c = k % COLS, r = (k / COLS) | 0;
+    for (const v of DIR_VEC) {
+      const nc = c + v.x, nr = r + v.y;
+      if (isWallTile(nc, nr)) continue;
+      const nk = key(nc, nr);
+      if (prev[nk] !== -1) continue;
+      prev[nk] = k;
+      queue.push(nk);
+    }
+  }
+  if (prev[goal] === -1) return [];
+  const tiles = [];
+  for (let k = goal; k !== start; k = prev[k]) tiles.push(k);
+  tiles.reverse();
+  return tiles.map(k => tileCenter(k % COLS, (k / COLS) | 0));
+}
+
+/* =====================================================================
+   COLLISION
+   ===================================================================== */
+function circleRectOverlap(cx, cy, cr, rect) {
+  const nx = clamp(cx, rect.x, rect.x + rect.w), ny = clamp(cy, rect.y, rect.y + rect.h);
+  const dx = cx - nx, dy = cy - ny;
+  return dx * dx + dy * dy < cr * cr;
+}
+
+// Push a circle out of any wall tiles it overlaps. Steps are small (2.5 px per
+// tick), so there is no tunnelling.
+function resolveWalls(e) {
+  for (let pass = 0; pass < 3; pass++) {
+    let moved = false;
+    const c0 = Math.floor((e.x - e.r) / TILE), c1 = Math.floor((e.x + e.r) / TILE);
+    const r0 = Math.floor((e.y - e.r) / TILE), r1 = Math.floor((e.y + e.r) / TILE);
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        if (!isWallTile(c, r)) continue;
+        const rx = c * TILE, ry = r * TILE;
+        const nx = clamp(e.x, rx, rx + TILE), ny = clamp(e.y, ry, ry + TILE);
+        const dx = e.x - nx, dy = e.y - ny, d2 = dx * dx + dy * dy;
+        if (d2 >= e.r * e.r) continue;
+        if (d2 > 1e-9) {
+          const d = Math.sqrt(d2), push = e.r - d;
+          e.x += (dx / d) * push; e.y += (dy / d) * push;
+        } else { // centre inside the tile: leave by the nearest edge
+          const left = e.x - rx, right = rx + TILE - e.x, top = e.y - ry, bottom = ry + TILE - e.y;
+          const m = Math.min(left, right, top, bottom);
+          if (m === left) e.x = rx - e.r; else if (m === right) e.x = rx + TILE + e.r;
+          else if (m === top) e.y = ry - e.r; else e.y = ry + TILE + e.r;
+        }
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+}
+
+// Past selves are solid to the present player (they can block routes), but
+// they themselves never move off their recorded path.
+// Rule: if the player is already overlapping a ghost (shared spawn, or squeezed
+// against a wall) that ghost becomes pass-through until they separate. This
+// prevents getting stuck or jittering.
+function resolveGhostBodies(p) {
+  for (const g of game.ghosts) {
+    if (!g.alive || g.done) continue;
+    const dx = p.x - g.x, dy = p.y - g.y, min = p.r + g.r, d2 = dx * dx + dy * dy;
+    if (d2 >= min * min) { g.passThrough = false; continue; }
+    if (g.passThrough) continue;
+    const d = Math.sqrt(d2);
+    const nx = d > 1e-6 ? dx / d : 1, ny = d > 1e-6 ? dy / d : 0;
+    p.x = g.x + nx * min; p.y = g.y + ny * min;
+  }
+}
+function markWedgedGhosts(p) {
+  for (const g of game.ghosts) {
+    if (!g.alive || g.done) continue;
+    const min = p.r + g.r - 2;
+    if (Math.hypot(p.x - g.x, p.y - g.y) < min) g.passThrough = true;
+  }
+}
+
+/* =====================================================================
+   ENTITIES
+   ===================================================================== */
+function createPlayer(spawn) {
+  const s = tileCenter(spawn[0], spawn[1]);
+  return {
+    id: 'player', kind: 'player', x: s.x, y: s.y, r: CFG.player.r,
+    hp: CFG.player.hp, maxHp: CFG.player.hp, facing: s.x < W / 2 ? 1 : 3,
+    gunCd: 0, meleeCd: 0, iframes: 0, flash: 0, alive: true, color: COL.player,
+  };
+}
+
+function createMouse(spawn, speed) {
+  const s = tileCenter(spawn[0], spawn[1]);
+  const path = findPath(spawn[0], spawn[1], Math.floor(OBJECTIVE.x / TILE), Math.floor(OBJECTIVE.y / TILE));
+  if (path.length) path[path.length - 1] = { x: OBJECTIVE.x, y: OBJECTIVE.y };
+  return {
+    id: 'mouse', kind: 'mouse', x: s.x, y: s.y, r: CFG.mouse.r,
+    hp: CFG.mouse.hp, maxHp: CFG.mouse.hp, speed, path, wp: 0, sinceRest: 0,
+    stun: 0, pause: 0, flash: 0, heading: Math.PI, alive: true, reached: false,
+  };
+}
+
+function createGhost(rec, index) {
+  return {
+    id: 'ghost' + index, kind: 'ghost', rec, round: rec.round, color: rec.color,
+    x: rec.x[0], y: rec.y[0], facing: rec.f[0], r: CFG.player.r,
+    hp: CFG.ghost.hp, maxHp: CFG.ghost.hp, alive: true, done: false,
+    evCursor: 0, flash: 0, passThrough: false,
+  };
+}
+
+// Everything that bullets and melee can damage this tick.
+function getTargets() {
+  const t = [];
+  if (game.player && game.player.alive) t.push(game.player);
+  for (const g of game.ghosts) if (g.alive && !g.done) t.push(g);
+  if (game.mouse && game.mouse.alive) t.push(game.mouse);
+  return t;
+}
+
+/* =====================================================================
+   RECORDING  (position snapshot every tick + separate attack events)
+   ===================================================================== */
+function createRecording(round, color) {
+  return { round, color, x: [], y: [], f: [], events: [], length: 0 };
+}
+function recordFrame(rec, p) {
+  rec.x.push(p.x); rec.y.push(p.y); rec.f.push(p.facing);
+  rec.length = rec.x.length;
+}
+function recordEvent(rec, tick, type, dir) { rec.events.push({ t: tick, type, dir }); }
+
+// Recordings are frozen once saved: ghosts only ever read them, so destroying
+// a ghost or restarting a round can never alter the history.
+function freezeRecording(rec) {
+  rec.events.forEach(Object.freeze);
+  Object.freeze(rec.x); Object.freeze(rec.y); Object.freeze(rec.f); Object.freeze(rec.events);
+  return Object.freeze(rec);
+}
+
+/* =====================================================================
+   REPLAY
+   ===================================================================== */
+// A past self is placed at its recorded position for this exact tick and fires
+// whatever attacks were recorded on this tick. No AI, no input re-simulation,
+// so there is nothing that can drift.
+function updateGhost(g, tick) {
+  if (!g.alive || g.done) return;
+  if (tick >= g.rec.length) { g.done = true; return; }  // its timeline is over: it fades out
+  g.x = g.rec.x[tick]; g.y = g.rec.y[tick]; g.facing = g.rec.f[tick];
+  const evs = g.rec.events;
+  while (g.evCursor < evs.length && evs[g.evCursor].t <= tick) {
+    const ev = evs[g.evCursor++];
+    if (ev.t !== tick) continue;
+    if (ev.type === 'shot') fireGun(g, ev.dir);
+    else if (ev.type === 'melee') doMelee(g, ev.dir);
+  }
+}
+
+/* =====================================================================
+   INPUT → PLAYER
+   ===================================================================== */
+function readMoveInput() {
+  const k = input.keys;
+  let x = 0, y = 0;
+  if (k.has('KeyA') || k.has('ArrowLeft')) x -= 1;
+  if (k.has('KeyD') || k.has('ArrowRight')) x += 1;
+  if (k.has('KeyW') || k.has('ArrowUp')) y -= 1;
+  if (k.has('KeyS') || k.has('ArrowDown')) y += 1;
+  x += input.joyX; y += input.joyY;
+  const l = Math.hypot(x, y);
+  if (l > 1) { x /= l; y /= l; }
+  return { x, y };
+}
+const isAimLocked = () => input.lockToggle || input.keys.has('ShiftLeft') || input.keys.has('ShiftRight');
+
+// Facing snaps to one of four directions. Moving diagonally keeps the current
+// facing if it is one of the two components, so you can aim right while
+// drifting up-right.
+function facingFromMove(mx, my, current) {
+  const ax = Math.abs(mx), ay = Math.abs(my);
+  if (ax < 0.2 && ay < 0.2) return current;
+  if (ax > 0.2 && ay > 0.2 && Math.abs(ax - ay) < 0.35) {
+    const cur = DIR_VEC[current];
+    if ((cur.x !== 0 && Math.sign(mx) === cur.x) || (cur.y !== 0 && Math.sign(my) === cur.y)) return current;
+  }
+  if (ax >= ay) return mx > 0 ? 1 : 3;
+  return my > 0 ? 2 : 0;
+}
+
+function updatePlayerMovement(p) {
+  const m = readMoveInput();
+  if (!isAimLocked()) p.facing = facingFromMove(m.x, m.y, p.facing);
+  p.x += m.x * CFG.player.speed * DT;
+  p.y += m.y * CFG.player.speed * DT;
+  resolveGhostBodies(p);
+  resolveWalls(p);
+  markWedgedGhosts(p);
+}
+
+function updatePlayerActions(p, tick) {
+  if (input.shootBuf > 0 && p.gunCd <= 0) {
+    input.shootBuf = 0;
+    p.gunCd = CFG.gun.cooldown;
+    fireGun(p, p.facing);
+    recordEvent(game.recording, tick, 'shot', p.facing);
+  }
+  if (input.meleeBuf > 0 && p.meleeCd <= 0) {
+    input.meleeBuf = 0;
+    p.meleeCd = CFG.melee.cooldown;
+    doMelee(p, p.facing);
+    recordEvent(game.recording, tick, 'melee', p.facing);
+  }
+  if (input.shootBuf > 0) input.shootBuf--;
+  if (input.meleeBuf > 0) input.meleeBuf--;
+}
+
+/* =====================================================================
+   ATTACKS
+   ===================================================================== */
+// Gun: exactly one bullet per shot, always along a cardinal axis.
+function fireGun(shooter, dir) {
+  const v = DIR_VEC[dir];
+  game.bullets.push({
+    owner: shooter.id, color: shooter.color,
+    fromPast: isReplayedAttacker(shooter),          // ownership flag, set at creation – never inferred from looks
+    x: shooter.x, y: shooter.y, dx: v.x, dy: v.y, traveled: 0, alive: true,
+  });
+}
+
+// Melee hits a rectangle that starts at the attacker's centre and extends
+// forwards only, so nothing behind the attacker can be hit.
+function meleeRect(x, y, r, dir) {
+  const reach = r + CFG.melee.reach, half = CFG.melee.width / 2;
+  switch (dir) {
+    case 0: return { x: x - half, y: y - reach, w: half * 2, h: reach };
+    case 2: return { x: x - half, y: y,         w: half * 2, h: reach };
+    case 1: return { x: x,         y: y - half, w: reach, h: half * 2 };
+    default: return { x: x - reach, y: y - half, w: reach, h: half * 2 };
+  }
+}
+function doMelee(attacker, dir) {
+  const rect = meleeRect(attacker.x, attacker.y, attacker.r, dir);
+  const source = { id: attacker.id, fromPast: isReplayedAttacker(attacker) };
+  for (const t of getTargets()) {
+    if (t.id === attacker.id) continue;
+    if (!canAffect(source, t)) continue;            // replayed swings pass over mice
+    if (circleRectOverlap(t.x, t.y, t.r, rect)) damage(t, CFG.melee.dmg, source);
+  }
+  game.fx.push({ rect, color: attacker.kind === 'player' ? COL.melee : attacker.color, life: CFG.melee.show, max: CFG.melee.show });
+}
+
+function updateBullets() {
+  const SUB = 3, step = (CFG.gun.speed * DT) / SUB;
+  for (const b of game.bullets) {
+    for (let s = 0; s < SUB && b.alive; s++) {
+      b.x += b.dx * step; b.y += b.dy * step; b.traveled += step;
+      if (isWallAt(b.x, b.y)) { b.alive = false; burst(b.x, b.y, '#9aa4b8', 5, 60); break; }
+      for (const t of getTargets()) {
+        if (t.id === b.owner) continue;
+        if (!canAffect(b, t)) continue;            // replayed bullets fly straight through mice
+        const dx = t.x - b.x, dy = t.y - b.y;
+        if (dx * dx + dy * dy <= (t.r + 2) * (t.r + 2)) {
+          damage(t, CFG.gun.dmg, { id: b.owner, fromPast: b.fromPast });
+          b.alive = false;
+          break;
+        }
+      }
+      if (b.alive && b.traveled >= CFG.gun.range) b.alive = false;
+    }
+  }
+  game.bullets = game.bullets.filter(b => b.alive);
+}
+
+// CORE RULE: only the present player's attacks may affect mice. Attacks are
+// tagged fromPast when a replayed past self creates them. This check is applied
+// at hit-detection time AND again inside damage() as a hard guard.
+function isReplayedAttacker(e) { return e.kind !== 'player'; }
+function canAffect(source, target) { return !(target.kind === 'mouse' && source.fromPast !== false); }
+
+function damage(target, amount, source) {
+  if (!canAffect(source, target)) return;
+  const sourceId = source.id;
+  if (target.kind === 'player') {
+    if (target.iframes > 0) return;
+    target.hp = Math.max(0, target.hp - amount);
+    target.iframes = CFG.player.iframes;
+    target.flash = 0.15;
+    game.shake = 7;
+    game.lastHitBy = sourceId;
+    burst(target.x, target.y, COL.player, 12, 140);
+  } else if (target.kind === 'ghost') {
+    target.hp -= amount;
+    target.flash = 0.15;
+    if (target.hp <= 0) { target.alive = false; burst(target.x, target.y, target.color, 22, 170); }
+    else burst(target.x, target.y, target.color, 6, 100);
+  } else if (target.kind === 'mouse') {
+    target.hp = Math.max(0, target.hp - amount);
+    target.flash = 0.15;
+    target.stun = CFG.mouse.stun;
+    burst(target.x, target.y, COL.mouse, 8, 120);
+    if (target.hp <= 0) { target.alive = false; target.killedBy = sourceId; burst(target.x, target.y, COL.mouse, 26, 180); }
+  }
+}
+
+/* =====================================================================
+   ENEMY: THE MOUSE  (follows a fixed BFS route, sniffs every few tiles)
+   ===================================================================== */
+function updateMouse(m) {
+  if (!m.alive) return;
+  if (m.stun > 0) { m.stun -= DT; return; }
+  if (m.pause > 0) { m.pause -= DT; return; }
+  let step = m.speed * DT;
+  while (step > 0 && m.wp < m.path.length) {
+    const tg = m.path[m.wp];
+    const dx = tg.x - m.x, dy = tg.y - m.y, d = Math.hypot(dx, dy);
+    if (d > 1e-6) m.heading = Math.atan2(dy, dx);
+    if (d <= step) {
+      m.x = tg.x; m.y = tg.y; step -= d; m.wp++; m.sinceRest++;
+      if (m.sinceRest >= CFG.mouse.pauseEvery && m.wp < m.path.length) {
+        m.sinceRest = 0; m.pause = CFG.mouse.pauseTime; break;
+      }
+    } else {
+      m.x += (dx / d) * step; m.y += (dy / d) * step; step = 0;
+    }
+  }
+  if (Math.hypot(m.x - OBJECTIVE.x, m.y - OBJECTIVE.y) <= OBJECTIVE.r) m.reached = true;
+}
+
+/* =====================================================================
+   SIMULATION STEP
+   ===================================================================== */
+function simTick() {
+  const t = game.tick;
+  for (const g of game.ghosts) updateGhost(g, t);   // 1. past selves replay tick t
+  updatePlayerMovement(game.player);                 // 2. present self moves
+  recordFrame(game.recording, game.player);          // 3. record position/facing for tick t
+  updatePlayerActions(game.player, t);               // 4. present attacks (recorded as events at t)
+  updateMouse(game.mouse);                           // 5. enemy
+  updateBullets();                                   // 6. projectiles + hits
+  tickTimers();                                      // 7. cooldowns, i-frames
+  checkRoundEnd();                                   // 8. win / lose
+  game.tick++;
+}
+
+function tickTimers() {
+  const p = game.player;
+  p.gunCd = Math.max(0, p.gunCd - DT);
+  p.meleeCd = Math.max(0, p.meleeCd - DT);
+  p.iframes = Math.max(0, p.iframes - DT);
+  p.flash = Math.max(0, p.flash - DT);
+  for (const g of game.ghosts) g.flash = Math.max(0, g.flash - DT);
+  game.mouse.flash = Math.max(0, game.mouse.flash - DT);
+}
+
+function updateEffects() {
+  for (const f of game.fx) f.life -= DT;
+  game.fx = game.fx.filter(f => f.life > 0);
+  for (const pt of game.particles) {
+    pt.x += pt.vx * DT; pt.y += pt.vy * DT; pt.vx *= 0.9; pt.vy *= 0.9; pt.life -= DT;
+  }
+  game.particles = game.particles.filter(pt => pt.life > 0);
+  game.shake = Math.max(0, game.shake - 30 * DT);
+}
+
+// Visual only – Math.random here never affects gameplay.
+function burst(x, y, color, n, speed) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, s = speed * (0.3 + Math.random() * 0.7);
+    game.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.3 + Math.random() * 0.3, color });
+  }
+}
+
+function checkRoundEnd() {
+  const m = game.mouse, p = game.player;
+  let result = null;
+  if (!m.alive) result = { won: true, reason: 'The mouse is down.' };       // a kill on the same tick as a loss still counts
+  else if (p.hp <= 0) {
+    p.alive = false;
+    result = { won: false, reason: game.lastHitBy && game.lastHitBy.startsWith('ghost')
+      ? 'Your past self took you out.' : 'You were destroyed.' };
+  }
+  else if (m.reached) result = { won: false, reason: 'The mouse reached the cheese.' };
+  else if (game.tick * DT >= game.rc.timeLimit) result = { won: false, reason: 'Time ran out.' };
+  if (result) { game.state = 'ending'; game.endTimer = 0.7; game.endResult = result; }
+}
+
+/* =====================================================================
+   ROUND FLOW
+   ===================================================================== */
+function prepareRound(n) {
+  game.round = n;
+  game.rc = roundConfig(n);
+  game.ghosts = game.recordings.map(createGhost);
+  game.player = createPlayer(game.rc.playerSpawn);
+  game.mouse = createMouse(game.rc.mouseSpawn, game.rc.mouseSpeed);
+  game.bullets = []; game.fx = []; game.particles = [];
+  game.tick = 0; game.shake = 0; game.lastHitBy = null; game.endResult = null;
+  game.recording = createRecording(n, GHOST_COLORS[game.recordings.length % GHOST_COLORS.length]);
+  for (const g of game.ghosts) {
+    g.passThrough = Math.hypot(g.x - game.player.x, g.y - game.player.y) < g.r + game.player.r;
+  }
+  clearActionInputs();
+  updateCamera(0, true);                             // jump straight to the new spawn
+  game.state = 'ready';
+  showReady();
+}
+
+function beginRound() {
+  if (game.state !== 'ready') return;
+  clearActionInputs();
+  game.state = 'playing';
+  hideOverlay();
+}
+
+function finishRound() {
+  const res = game.endResult;
+  if (res.won) {
+    game.recordings.push(freezeRecording(game.recording));   // only cleared rounds become past selves
+    game.recording = null;
+    game.state = 'won';
+    showWon(res);
+  } else {
+    game.recording = null;                                  // failed attempt is discarded
+    game.state = 'lost';
+    showLost(res);
+  }
+}
+
+function clearActionInputs() { input.shootBuf = 0; input.meleeBuf = 0; }
+
+function handleAction(action) {
+  switch (action) {
+    case 'start':  game.recordings = []; prepareRound(1); beginRound(); break;
+    case 'begin':  beginRound(); break;
+    case 'next':   prepareRound(game.round + 1); break;
+    case 'retry':  prepareRound(game.round); break;
+    case 'newrun': game.recordings = []; prepareRound(1); break;
+  }
+}
+
+/* =====================================================================
+   OVERLAYS
+   ===================================================================== */
+const overlay = document.getElementById('overlay');
+function showOverlay(html, compact) {
+  overlay.innerHTML = html;
+  overlay.classList.remove('hidden');
+  overlay.classList.toggle('compact', !!compact);
+}
+function hideOverlay() { overlay.classList.add('hidden'); overlay.innerHTML = ''; }
+
+function showTitle() {
+  showOverlay(`
+    <div class="card">
+      <h1>Loopshot</h1>
+      <p>Stop the mouse before it reaches the cheese in the middle of the map. Every round you clear is recorded, and in each later round that past self replays it exactly – movement, bullets and swings included.</p>
+      <div class="controls">
+        <b>Move</b><span><kbd>WASD</kbd> or arrow keys · joystick on touch</span>
+        <b>Shoot</b><span><kbd>Space</kbd> – one bullet, straight in your facing direction</span>
+        <b>Melee</b><span><kbd>E</kbd> – short swing in front of you, 2 damage</span>
+        <b>Lock aim</b><span>Hold <kbd>Shift</kbd> to move without turning</span>
+        <b>Restart round</b><span><kbd>R</kbd> · <kbd>Enter</kbd> presses the highlighted button</span>
+      </div>
+      <ul class="rules">
+        <li>You face the way you last moved: up, down, left or right. No diagonal shots.</li>
+        <li>Past selves can shoot and hit you and block your path, but they never hurt the mouse – you must stop it yourself every round.</li>
+        <li>You can destroy a past self (2 hits). Its recording stays for future rounds.</li>
+        <li>Failed attempts are not recorded.</li>
+      </ul>
+      <div class="btns"><button class="primary" data-action="start" data-primary>Start round 1</button></div>
+    </div>`);
+}
+
+function showReady() {
+  const n = game.recordings.length;
+  const who = n === 0 ? 'No past selves yet.' : `${n} past self${n > 1 ? 'ves' : ''} will replay.`;
+  showOverlay(`
+    <div class="card">
+      <h2>Round ${game.round}</h2>
+      <p>${who} ${game.rc.timeLimit}s on the clock.${n ? ' Dashed lines show each past self’s route; marks show where it attacks.' : ''}</p>
+      <div class="btns">
+        <button class="primary" data-action="begin" data-primary>Start round ${game.round}</button>
+        ${game.round > 1 ? '<button data-action="newrun">New run</button>' : ''}
+      </div>
+    </div>`, true);
+}
+
+function showWon(res) {
+  const rec = game.recordings[game.recordings.length - 1];
+  const shots = rec.events.filter(e => e.type === 'shot').length;
+  const swings = rec.events.length - shots;
+  showOverlay(`
+    <div class="card">
+      <h2 class="win">Round ${game.round} cleared</h2>
+      <p>${res.reason} This run is saved: ${(rec.length * DT).toFixed(1)}s, ${shots} shot${shots === 1 ? '' : 's'}, ${swings} melee swing${swings === 1 ? '' : 's'}.</p>
+      <p class="small">Round ${game.round + 1} will contain ${game.recordings.length} past self${game.recordings.length > 1 ? 'ves' : ''}.</p>
+      <div class="btns">
+        <button class="primary" data-action="next" data-primary>Continue to round ${game.round + 1}</button>
+        <button data-action="newrun">New run</button>
+      </div>
+    </div>`);
+}
+
+function showLost(res) {
+  showOverlay(`
+    <div class="card">
+      <h2 class="lose">Round ${game.round} failed</h2>
+      <p>${res.reason}</p>
+      <p class="small">This attempt was not recorded. Your ${game.recordings.length} saved recording${game.recordings.length === 1 ? ' is' : 's are'} unchanged.</p>
+      <div class="btns">
+        <button class="primary" data-action="retry" data-primary>Retry round ${game.round}</button>
+        <button data-action="newrun">New run</button>
+      </div>
+    </div>`);
+}
+
+function triggerPrimary() {
+  if (overlay.classList.contains('hidden')) return;
+  const b = overlay.querySelector('[data-primary]');
+  if (b) b.click();
+}
+
+/* =====================================================================
+   RENDERING
+   ===================================================================== */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const stage = document.getElementById('stage');
+const view = { scale: 1 };
+
+// ----- Camera (visual only: gameplay never reads it) -----
+// cam.x / cam.y is the world position of the top-left of the screen.
+const cam = { x: 0, y: 0 };
+function cameraTarget() {
+  const p = game.player;
+  const fx = p ? p.x : W / 2, fy = p ? p.y : H / 2;
+  return { x: clamp(fx - VIEW_W / 2, 0, W - VIEW_W), y: clamp(fy - VIEW_H / 2, 0, H - VIEW_H) };
+}
+function updateCamera(dt, snap) {
+  const t = cameraTarget();
+  if (snap) { cam.x = t.x; cam.y = t.y; return; }
+  const k = 1 - Math.exp(-dt * 8);                 // frame-rate independent smoothing
+  cam.x += (t.x - cam.x) * k; cam.y += (t.y - cam.y) * k;
+}
+
+function resize() {
+  const rect = stage.getBoundingClientRect();
+  const availW = Math.max(100, rect.width - 16), availH = Math.max(80, rect.height - 16);
+  const s = Math.min(availW / VIEW_W, availH / VIEW_H);
+  const cw = Math.floor(VIEW_W * s), ch = Math.floor(VIEW_H * s);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+  canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
+  view.scale = canvas.width / VIEW_W;
+}
+
+function render(time) {
+  const s = view.scale;
+  const sx = game.shake ? (Math.random() - 0.5) * game.shake : 0;
+  const sy = game.shake ? (Math.random() - 0.5) * game.shake : 0;
+  ctx.setTransform(s, 0, 0, s, 0, 0);
+  ctx.fillStyle = COL.bg; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  // World pass: everything below is drawn in world coordinates.
+  ctx.setTransform(s, 0, 0, s, (-cam.x + sx) * s, (-cam.y + sy) * s);
+  drawArena();
+  drawObjective(time);
+  if (game.player) {
+    drawMousePath();
+    drawGhostGuides();
+    drawAimLine();
+    drawMeleeFx();
+    drawGhosts();
+    drawMouse(time);
+    drawPlayer();
+    drawBullets();
+    drawParticles();
+  }
+  // Screen pass: HUD-like elements fixed to the viewport.
+  ctx.setTransform(s, 0, 0, s, 0, 0);
+  if (game.player) drawMouseIndicator();
+  drawMinimap();
+}
+
+function drawArena() {
+  const c0 = Math.max(0, Math.floor(cam.x / TILE) - 1), c1 = Math.min(COLS - 1, Math.ceil((cam.x + VIEW_W) / TILE) + 1);
+  const r0 = Math.max(0, Math.floor(cam.y / TILE) - 1), r1 = Math.min(ROWS - 1, Math.ceil((cam.y + VIEW_H) / TILE) + 1);
+  ctx.fillStyle = COL.floor; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = COL.grid; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let c = Math.max(1, c0); c <= c1; c++) { ctx.moveTo(c * TILE + 0.5, r0 * TILE); ctx.lineTo(c * TILE + 0.5, (r1 + 1) * TILE); }
+  for (let r = Math.max(1, r0); r <= r1; r++) { ctx.moveTo(c0 * TILE, r * TILE + 0.5); ctx.lineTo((c1 + 1) * TILE, r * TILE + 0.5); }
+  ctx.stroke();
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    if (MAP[r][c] !== '#') continue;
+    ctx.fillStyle = COL.wall; ctx.fillRect(c * TILE, r * TILE, TILE, TILE);
+    if (!isWallTile(c, r - 1) || r === 0) { ctx.fillStyle = COL.wallTop; ctx.fillRect(c * TILE, r * TILE, TILE, 3); }
+  }
+}
+
+function drawObjective(time) {
+  const { x, y, r } = OBJECTIVE;
+  const pulse = 0.5 + 0.5 * Math.sin(time / 300);
+  ctx.strokeStyle = COL.cheese; ctx.globalAlpha = 0.25 + pulse * 0.2; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y, r + 6, 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = COL.cheese;
+  ctx.beginPath(); ctx.moveTo(x - 12, y + 8); ctx.lineTo(x + 12, y + 8); ctx.lineTo(x + 6, y - 9); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#c99a2e';
+  ctx.beginPath(); ctx.arc(x + 2, y + 2, 2.5, 0, Math.PI * 2); ctx.arc(x - 5, y + 5, 1.8, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawMousePath() {
+  const m = game.mouse;
+  if (!m.alive || m.wp >= m.path.length) return;
+  ctx.strokeStyle = COL.mouse; ctx.globalAlpha = 0.18; ctx.lineWidth = 2; ctx.setLineDash([2, 6]);
+  ctx.beginPath(); ctx.moveTo(m.x, m.y);
+  for (let i = m.wp; i < m.path.length; i++) ctx.lineTo(m.path[i].x, m.path[i].y);
+  ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+}
+
+// Shows where each past self is heading and telegraphs its upcoming attacks.
+// In the "ready" state the whole recording is shown so the round can be planned.
+function drawGhostGuides() {
+  const ready = game.state === 'ready';
+  for (const g of game.ghosts) {
+    if (!ready && (!g.alive || g.done)) continue;
+    const rec = g.rec;
+    const from = ready ? 0 : game.tick;
+    const to = ready ? rec.length - 1 : Math.min(rec.length - 1, game.tick + GUIDE_TICKS);
+    if (from > to) continue;
+    ctx.strokeStyle = g.color; ctx.lineWidth = 2; ctx.globalAlpha = ready ? 0.45 : 0.3; ctx.setLineDash([5, 6]);
+    ctx.beginPath(); ctx.moveTo(rec.x[from], rec.y[from]);
+    for (let i = from + 3; i < to; i += 3) ctx.lineTo(rec.x[i], rec.y[i]);
+    ctx.lineTo(rec.x[to], rec.y[to]); ctx.stroke(); ctx.setLineDash([]);
+    if (ready) { // end marker
+      ctx.globalAlpha = 0.6; ctx.lineWidth = 2;
+      const ex = rec.x[to], ey = rec.y[to];
+      ctx.beginPath(); ctx.moveTo(ex - 5, ey - 5); ctx.lineTo(ex + 5, ey + 5); ctx.moveTo(ex + 5, ey - 5); ctx.lineTo(ex - 5, ey + 5); ctx.stroke();
+    }
+    for (const ev of rec.events) {
+      if (ev.t < from) continue;
+      const ahead = ev.t - game.tick;
+      if (!ready && ahead > TELEGRAPH_TICKS) break;
+      const ex = rec.x[ev.t], ey = rec.y[ev.t];
+      ctx.globalAlpha = ready ? 0.4 : 0.25 + 0.6 * (1 - ahead / TELEGRAPH_TICKS);
+      ctx.strokeStyle = g.color; ctx.fillStyle = g.color; ctx.lineWidth = ready ? 1.5 : 2;
+      if (ev.type === 'shot') {
+        const v = DIR_VEC[ev.dir];
+        const len = ready ? 26 : rayLength(ex, ey, ev.dir, CFG.gun.range);
+        ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex + v.x * len, ey + v.y * len); ctx.stroke();
+        ctx.beginPath(); ctx.arc(ex, ey, 3, 0, Math.PI * 2); ctx.fill();
+      } else {
+        const rc = meleeRect(ex, ey, CFG.player.r, ev.dir);
+        ctx.strokeRect(rc.x, rc.y, rc.w, rc.h);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawAimLine() {
+  const p = game.player;
+  if (!p.alive || game.state === 'won' || game.state === 'lost') return;
+  const v = DIR_VEC[p.facing];
+  const len = rayLength(p.x, p.y, p.facing, CFG.gun.range);
+  ctx.strokeStyle = COL.player; ctx.globalAlpha = p.gunCd > 0 ? 0.08 : 0.2; ctx.lineWidth = 1.5; ctx.setLineDash([3, 5]);
+  ctx.beginPath(); ctx.moveTo(p.x + v.x * p.r, p.y + v.y * p.r); ctx.lineTo(p.x + v.x * len, p.y + v.y * len); ctx.stroke();
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+}
+
+function drawMeleeFx() {
+  for (const f of game.fx) {
+    const a = f.life / f.max;
+    ctx.globalAlpha = 0.4 * a; ctx.fillStyle = f.color; ctx.fillRect(f.rect.x, f.rect.y, f.rect.w, f.rect.h);
+    ctx.globalAlpha = 0.9 * a; ctx.strokeStyle = f.color; ctx.lineWidth = 2; ctx.strokeRect(f.rect.x, f.rect.y, f.rect.w, f.rect.h);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawFacingNub(x, y, r, dir, color) {
+  const v = DIR_VEC[dir], px = -v.y, py = v.x;
+  const tx = x + v.x * (r + 7), ty = y + v.y * (r + 7);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(tx, ty);
+  ctx.lineTo(x + v.x * (r + 1) + px * 5, y + v.y * (r + 1) + py * 5);
+  ctx.lineTo(x + v.x * (r + 1) - px * 5, y + v.y * (r + 1) - py * 5);
+  ctx.closePath(); ctx.fill();
+}
+
+function drawGhosts() {
+  for (const g of game.ghosts) {
+    if (!g.alive || g.done) continue;
+    ctx.globalAlpha = g.passThrough ? 0.22 : 0.4;
+    ctx.fillStyle = g.flash > 0 ? '#ffffff' : g.color;
+    ctx.beginPath(); ctx.arc(g.x, g.y, g.r, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.9; ctx.strokeStyle = g.color; ctx.lineWidth = 2; ctx.stroke();
+    drawFacingNub(g.x, g.y, g.r, g.facing, g.color);
+    ctx.globalAlpha = 0.9; ctx.fillStyle = g.color; ctx.font = '600 10px system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('R' + g.round + (g.hp < g.maxHp ? ' ·' : ''), g.x, g.y - g.r - 6);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawMouse(time) {
+  const m = game.mouse;
+  if (!m.alive) return;
+  ctx.save();
+  ctx.translate(m.x, m.y); ctx.rotate(m.heading);
+  const body = m.flash > 0 ? '#ffffff' : COL.mouse;
+  ctx.strokeStyle = '#a89c90'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(-m.r, 0);
+  ctx.quadraticCurveTo(-m.r - 8, Math.sin(time / 120) * 6, -m.r - 15, 0); ctx.stroke();
+  ctx.fillStyle = body;
+  ctx.beginPath(); ctx.ellipse(-1, 0, m.r + 1, m.r * 0.72, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(m.r - 2, -5); ctx.lineTo(m.r + 7, 0); ctx.lineTo(m.r - 2, 5); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#e8a5a5';
+  ctx.beginPath(); ctx.arc(m.r + 6, 0, 1.8, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = body;
+  ctx.beginPath(); ctx.arc(m.r - 4, -6, 3.5, 0, Math.PI * 2); ctx.arc(m.r - 4, 6, 3.5, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  // health pips
+  for (let i = 0; i < m.maxHp; i++) {
+    ctx.fillStyle = i < m.hp ? COL.mouse : '#3a4252';
+    ctx.fillRect(m.x - (m.maxHp * 7) / 2 + i * 7, m.y - m.r - 10, 5, 3);
+  }
+  if (m.pause > 0) { // sniffing
+    ctx.fillStyle = COL.mouse; ctx.globalAlpha = 0.6; ctx.font = '600 10px system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('sniff', m.x, m.y + m.r + 14); ctx.globalAlpha = 1;
+  }
+}
+
+function drawPlayer() {
+  const p = game.player;
+  if (!p.alive) return;
+  const blink = p.iframes > 0 && Math.floor(p.iframes * 20) % 2 === 0;
+  ctx.globalAlpha = blink ? 0.45 : 1;
+  ctx.fillStyle = p.flash > 0 ? '#ffffff' : COL.player;
+  ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+  drawFacingNub(p.x, p.y, p.r, p.facing, COL.player);
+  if (isAimLocked()) {
+    ctx.strokeStyle = COL.player; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r + 5, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawBullets() {
+  ctx.lineCap = 'round';
+  for (const b of game.bullets) {
+    ctx.strokeStyle = b.color; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(b.x - b.dx * 9, b.y - b.dy * 9); ctx.lineTo(b.x, b.y); ctx.stroke();
+    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(b.x, b.y, 1.6, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.lineCap = 'butt';
+}
+
+// Arrow at the screen edge pointing at the mouse when it is off-screen.
+function drawMouseIndicator() {
+  const m = game.mouse;
+  if (!m || !m.alive) return;
+  const mx = m.x - cam.x, my = m.y - cam.y, pad = 22;
+  if (mx > 0 && mx < VIEW_W && my > 0 && my < VIEW_H) return;
+  const cx = VIEW_W / 2, cy = VIEW_H / 2, dx = mx - cx, dy = my - cy;
+  const k = Math.min((cx - pad) / Math.abs(dx || 1e-6), (cy - pad) / Math.abs(dy || 1e-6));
+  const ax = cx + dx * k, ay = cy + dy * k, a = Math.atan2(dy, dx);
+  ctx.save(); ctx.translate(ax, ay); ctx.rotate(a);
+  ctx.fillStyle = COL.mouse; ctx.globalAlpha = 0.9;
+  ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-6, -8); ctx.lineTo(-6, 8); ctx.closePath(); ctx.fill();
+  ctx.restore(); ctx.globalAlpha = 1;
+}
+
+const WALL_TILES = [];
+for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (MAP[r][c] === '#') WALL_TILES.push([c, r]);
+
+// Whole-world overview in the top-right corner.
+function drawMinimap() {
+  const mw = 150, ms = mw / W, mh = H * ms, ox = VIEW_W - mw - 10, oy = 10;
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = '#0a0d12'; ctx.fillRect(ox - 2, oy - 2, mw + 4, mh + 4);
+  ctx.fillStyle = COL.floor; ctx.fillRect(ox, oy, mw, mh);
+  ctx.fillStyle = COL.wallTop;
+  const t = TILE * ms;
+  for (const [c, r] of WALL_TILES) ctx.fillRect(ox + c * t, oy + r * t, t + 0.3, t + 0.3);
+  ctx.globalAlpha = 1;
+  const dot = (x, y, color, rad) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(ox + x * ms, oy + y * ms, rad, 0, Math.PI * 2); ctx.fill(); };
+  dot(OBJECTIVE.x, OBJECTIVE.y, COL.cheese, 2.5);
+  if (game.player) {
+    for (const g of game.ghosts) if (g.alive && !g.done) dot(g.x, g.y, g.color, 2);
+    if (game.mouse.alive) dot(game.mouse.x, game.mouse.y, COL.mouse, 2.5);
+    dot(game.player.x, game.player.y, COL.player, 3);
+  }
+  ctx.strokeStyle = '#ffffff'; ctx.globalAlpha = 0.5; ctx.lineWidth = 1;
+  ctx.strokeRect(ox + cam.x * ms, oy + cam.y * ms, VIEW_W * ms, VIEW_H * ms);
+  ctx.globalAlpha = 1;
+}
+
+function drawParticles() {
+  for (const pt of game.particles) {
+    ctx.globalAlpha = Math.min(1, pt.life * 3); ctx.fillStyle = pt.color;
+    ctx.fillRect(pt.x - 1.5, pt.y - 1.5, 3, 3);
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* =====================================================================
+   HUD
+   ===================================================================== */
+const hud = {
+  round: document.getElementById('hRound'), ghosts: document.getElementById('hGhosts'),
+  hp: document.getElementById('hHp'), mouse: document.getElementById('hMouse'),
+  time: document.getElementById('hTime'), facing: document.getElementById('hFacing'),
+  gun: document.getElementById('hGun'), melee: document.getElementById('hMelee'),
+};
+const hudCache = new Map();
+function setText(el, v) { if (hudCache.get(el) !== v) { hudCache.set(el, v); el.textContent = v; } }
+
+function updateHUD() {
+  const p = game.player, m = game.mouse;
+  setText(hud.round, String(game.round));
+  if (!p) return;
+  const active = game.ghosts.filter(g => g.alive && !g.done).length;
+  setText(hud.ghosts, `${active} / ${game.ghosts.length}`);
+  setText(hud.hp, '●'.repeat(p.hp) + '○'.repeat(p.maxHp - p.hp));
+  setText(hud.mouse, '■'.repeat(m.hp) + '□'.repeat(m.maxHp - m.hp));
+  const left = Math.max(0, game.rc.timeLimit - game.tick * DT);
+  setText(hud.time, left.toFixed(1));
+  hud.time.classList.toggle('low', left < 6);
+  setText(hud.facing, DIR_ARROW[p.facing] + (isAimLocked() ? ' locked' : ''));
+  const g = 1 - p.gunCd / CFG.gun.cooldown, me = 1 - p.meleeCd / CFG.melee.cooldown;
+  hud.gun.style.width = (g * 100).toFixed(0) + '%'; hud.gun.classList.toggle('ready', p.gunCd <= 0);
+  hud.melee.style.width = (me * 100).toFixed(0) + '%'; hud.melee.classList.toggle('ready', p.meleeCd <= 0);
+}
+
+/* =====================================================================
+   MAIN LOOP  (fixed-step simulation, render every animation frame)
+   ===================================================================== */
+let lastTime = performance.now(), accumulator = 0;
+
+function step() {
+  if (game.state === 'playing') { simTick(); updateEffects(); }
+  else if (game.state === 'ending') {
+    updateEffects();
+    game.endTimer -= DT;
+    if (game.endTimer <= 0) finishRound();
+  } else if (game.state === 'won' || game.state === 'lost') updateEffects();
+}
+
+function frame(now) {
+  let dt = (now - lastTime) / 1000;
+  lastTime = now;
+  if (dt > 0.25) dt = 0.25;           // avoid a burst of ticks after a background tab
+  accumulator += dt;
+  while (accumulator >= DT) { step(); accumulator -= DT; }
+  updateCamera(dt, false);
+  render(now);
+  updateHUD();
+  requestAnimationFrame(frame);
+}
+
+/* =====================================================================
+   INPUT LISTENERS  (registered exactly once)
+   ===================================================================== */
+const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'Space', 'KeyE', 'KeyR', 'ShiftLeft', 'ShiftRight', 'Enter']);
+
+function initInput() {
+  window.addEventListener('keydown', e => {
+    if (!GAME_KEYS.has(e.code)) return;
+    e.preventDefault();
+    if (e.code === 'Enter') { if (!e.repeat) triggerPrimary(); return; }
+    if (e.code === 'KeyR') {
+      if (e.repeat) return;
+      const losing = game.state === 'ending' && game.endResult && !game.endResult.won;
+      if (game.state === 'playing' || game.state === 'lost' || losing) prepareRound(game.round);
+      return;
+    }
+    input.keys.add(e.code);
+    if (e.repeat || game.state !== 'playing') return;
+    if (e.code === 'Space') input.shootBuf = INPUT_BUFFER_TICKS;
+    if (e.code === 'KeyE') input.meleeBuf = INPUT_BUFFER_TICKS;
+  });
+  window.addEventListener('keyup', e => input.keys.delete(e.code));
+  window.addEventListener('blur', () => { input.keys.clear(); resetJoystick(); });
+
+  overlay.addEventListener('click', e => {
+    const b = e.target.closest('button[data-action]');
+    if (!b) return;
+    b.blur();
+    handleAction(b.dataset.action);
+  });
+
+  // ----- touch: joystick -----
+  const joyEl = document.getElementById('joy'), knob = document.getElementById('knob');
+  const joy = { id: null, cx: 0, cy: 0, R: 1 };
+  function updateJoy(e) {
+    let dx = (e.clientX - joy.cx) / joy.R, dy = (e.clientY - joy.cy) / joy.R;
+    const l = Math.hypot(dx, dy);
+    if (l > 1) { dx /= l; dy /= l; }
+    knob.style.transform = `translate(${dx * joy.R}px, ${dy * joy.R}px)`;
+    if (l < 0.18) { input.joyX = 0; input.joyY = 0; } else { input.joyX = dx; input.joyY = dy; }
+  }
+  joyEl.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    joyEl.setPointerCapture(e.pointerId);
+    const r = joyEl.getBoundingClientRect();
+    joy.id = e.pointerId; joy.cx = r.left + r.width / 2; joy.cy = r.top + r.height / 2; joy.R = r.width * 0.36;
+    updateJoy(e);
+  });
+  joyEl.addEventListener('pointermove', e => { if (e.pointerId === joy.id) updateJoy(e); });
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t =>
+    joyEl.addEventListener(t, e => { if (e.pointerId === joy.id) resetJoystick(); }));
+  function resetJoystickImpl() { joy.id = null; input.joyX = 0; input.joyY = 0; knob.style.transform = ''; }
+  resetJoystick = resetJoystickImpl;
+
+  // ----- touch: buttons -----
+  function bindPress(id, fn) {
+    const el = document.getElementById(id);
+    el.addEventListener('pointerdown', e => { e.preventDefault(); el.classList.add('down'); fn(el); });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => el.addEventListener(t, () => el.classList.remove('down')));
+  }
+  bindPress('tShoot', () => { if (game.state === 'playing') input.shootBuf = INPUT_BUFFER_TICKS; });
+  bindPress('tMelee', () => { if (game.state === 'playing') input.meleeBuf = INPUT_BUFFER_TICKS; });
+  bindPress('tLock', el => { input.lockToggle = !input.lockToggle; el.classList.toggle('on', input.lockToggle); });
+
+  // show touch controls on touch devices
+  if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) document.body.classList.add('touch');
+  window.addEventListener('touchstart', () => { document.body.classList.add('touch'); resize(); }, { once: true, passive: true });
+
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
+  else window.addEventListener('resize', resize);
+}
+let resetJoystick = () => {};
+
+/* =====================================================================
+   BOOT
+   ===================================================================== */
+initInput();
+resize();
+showTitle();
+requestAnimationFrame(frame);
+
+// Exposed for debugging in the console.
+window.loopshot = { game, input, handleAction, simTick, step, cam, updateCamera };
+})();
+</script>
+</body>
+</html>
